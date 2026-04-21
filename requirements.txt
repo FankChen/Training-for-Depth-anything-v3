@@ -1,0 +1,11 @@
+torch>=2.1
+torchvision>=0.16
+pytorch-lightning>=2.1
+numpy>=1.23
+Pillow>=9.0
+PyYAML>=6.0
+tensorboard>=2.13
+rich>=13.0
+easydict>=1.10
+opencv-python>=4.5
+tqdm>=4.60

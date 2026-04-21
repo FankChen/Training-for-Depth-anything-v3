@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.venv/
+venv/
+env/
+
+# Lightning / TB / outputs
+logs/
+lightning_logs/
+outputs/
+checkpoints/
+*.ckpt
+*.pth
+*.pt
+events.out.tfevents.*
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+*.swp
