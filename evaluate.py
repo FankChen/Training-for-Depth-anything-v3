@@ -33,9 +33,12 @@ METRIC_DIRS = {
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser()
     p.add_argument("--config", type=str, required=True)
-    p.add_argument("--checkpoint", type=str, required=True,
-                   help="Path to a .ckpt file saved during training")
+    p.add_argument("--checkpoint", type=str, default="",
+                   help="Path to a .ckpt file saved during training. "
+                        "Leave empty to evaluate the raw pretrained model (baseline).")
     p.add_argument("--split", type=str, default="test", choices=["val", "test"])
+    p.add_argument("--metrics-json", type=str, default="",
+                   help="If set, write the 7 metrics to this JSON file.")
     return p.parse_args()
 
 
@@ -61,10 +64,14 @@ def main() -> Dict[str, float]:
         max_depth=float(cfg["model"].get("max_depth", 80.0)),
     )
 
-    print(f"[eval] Loading checkpoint: {args.checkpoint}")
-    model = VideoDepthLightningModule.load_from_checkpoint(
-        args.checkpoint, cfg=cfg, strict=False
-    )
+    if args.checkpoint:
+        print(f"[eval] Loading checkpoint: {args.checkpoint}")
+        model = VideoDepthLightningModule.load_from_checkpoint(
+            args.checkpoint, cfg=cfg, strict=False
+        )
+    else:
+        print("[eval] No --checkpoint given → evaluating raw pretrained model (baseline).")
+        model = VideoDepthLightningModule(cfg=cfg)
 
     hw = cfg["hardware"]
     trainer = pl.Trainer(
@@ -95,6 +102,14 @@ def main() -> Dict[str, float]:
             out[k] = v
             print(f"  {k:<10s} {arrow}  {v:.4f}")
     print("=====================================================\n")
+
+    if args.metrics_json:
+        import json
+        out = {f"{prefix}/{k}": float(res[f"{prefix}/{k}"]) for k in METRIC_DIRS if f"{prefix}/{k}" in res}
+        Path(args.metrics_json).parent.mkdir(parents=True, exist_ok=True)
+        with open(args.metrics_json, "w") as f:
+            json.dump(out, f, indent=2)
+        print(f"[eval] Wrote metrics → {args.metrics_json}")
     return out
 
 

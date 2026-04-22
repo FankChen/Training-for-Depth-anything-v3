@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+import torch
 import yaml
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import (
@@ -38,6 +39,10 @@ def parse_args() -> argparse.Namespace:
                    help="Override training.batch_size")
     p.add_argument("--lr", type=float, default=None,
                    help="Override training.lr")
+    p.add_argument("--max_epochs", type=int, default=None,
+                   help="Override training.max_epochs")
+    p.add_argument("--experiment_name", type=str, default=None,
+                   help="Override logging.experiment_name (sub-folder under logs/<project>/)")
     return p.parse_args()
 
 
@@ -51,6 +56,10 @@ def apply_overrides(cfg: dict, args: argparse.Namespace) -> dict:
         cfg["training"]["batch_size"] = args.batch_size
     if args.lr is not None:
         cfg["training"]["lr"] = args.lr
+    if args.max_epochs is not None:
+        cfg["training"]["max_epochs"] = args.max_epochs
+    if args.experiment_name is not None:
+        cfg["logging"]["experiment_name"] = args.experiment_name
     if args.devices is not None:
         # allow '1' -> int, or '0,1' -> list[int]
         d = args.devices
@@ -108,6 +117,7 @@ def main() -> None:
     cfg = apply_overrides(load_config(args.config), args)
 
     pl.seed_everything(42, workers=True)
+    torch.set_float32_matmul_precision("high")
 
     log_cfg = cfg["logging"]
     log_dir = Path(log_cfg.get("log_dir", "logs"))
@@ -144,7 +154,22 @@ def main() -> None:
 
     # final test using the best checkpoint tracked by ModelCheckpoint
     try:
-        trainer.test(model, datamodule=dm, ckpt_path="best")
+        results = trainer.test(model, datamodule=dm, ckpt_path="best")
+        # Dump to a JSON sidecar so scripts/record_run.py can pick it up.
+        if results:
+            import json
+            out_json = Path(logger.log_dir) / "test_metrics.json"
+            flat = {k: float(v) for k, v in results[0].items()}
+            best_ckpt = ""
+            for cb in callbacks:
+                if isinstance(cb, ModelCheckpoint):
+                    best_ckpt = cb.best_model_path or ""
+                    break
+            flat["_best_ckpt"] = best_ckpt
+            flat["_log_dir"] = str(logger.log_dir)
+            with out_json.open("w") as f:
+                json.dump(flat, f, indent=2)
+            print(f"[train] Wrote test metrics → {out_json}")
     except Exception as e:
         print(f"[train] Skipping final test: {e}")
 

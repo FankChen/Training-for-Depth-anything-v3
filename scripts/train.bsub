@@ -1,0 +1,41 @@
+#!/bin/bash -l
+#BSUB -J VDA-V3-KITTI
+#BSUB -o jobs/vda_v3_kitti.%J.stdout
+#BSUB -e jobs/vda_v3_kitti.%J.stderr
+#BSUB -q batch_h200
+#BSUB -U resv_cr_tfx_h200
+#BSUB -m rng-dl01-w24n01
+#BSUB -W 48:00
+#BSUB -n 8
+#BSUB -M 30240
+#BSUB -gpu "num=1:aff=yes"
+
+set -e
+
+module purge
+module load conda/4.8.5
+module load cuda/12.4.0
+
+# Activate project-local conda env (prefix path, NOT a named env)
+PROJ=/home/izi2sgh/MYDATA/quanjie/liren/depth-v3/training-for-depth-anything-v3
+ENV=/home/izi2sgh/MYDATA/quanjie/liren/depth-v3/envs/depth-v3
+
+# Use the env's python directly to avoid `conda activate` complications
+export PATH="${ENV}/bin:${PATH}"
+export PYTHONNOUSERSITE=1
+
+# Torch / perf niceties
+export TORCH_CUDA_ARCH_LIST="9.0"
+export HYDRA_FULL_ERROR=1
+export EXPERIMENT_UID="${LSB_JOBID}"
+
+cd "${PROJ}"
+mkdir -p jobs logs
+
+echo "=== env info ==="
+which python
+python -c "import torch; print('torch', torch.__version__, 'cuda', torch.cuda.is_available(), torch.cuda.get_device_name(0) if torch.cuda.is_available() else '')"
+nvidia-smi | head -20
+echo "================"
+
+python train.py --config configs/kitti.yaml

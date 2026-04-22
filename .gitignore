@@ -22,3 +22,14 @@ events.out.tfevents.*
 .vscode/
 .DS_Store
 *.swp
+
+# xlsx filelock side-file (the xlsx itself IS tracked)
+experiments.xlsx.lock
+*.xlsx.lock
+
+# LSF
+jobs/*.stdout
+jobs/*.stderr
+
+# Local data trees (symlinks) — not to be committed
+kitti_root/

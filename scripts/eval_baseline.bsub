@@ -1,0 +1,69 @@
+#!/bin/bash -l
+# -----------------------------------------------------------------------------
+# Baseline evaluation job: run evaluate.py on the RAW pretrained VDA-V3 model
+# (no fine-tuning) so we can compare "before vs after fine-tuning" in the xlsx.
+# PUBLIC queue, no reservation.
+# -----------------------------------------------------------------------------
+#BSUB -J BH-000425-08-05-VDA-V3-KITTI-baseline
+#BSUB -o jobs/vda_v3_kitti_baseline.%J.stdout
+#BSUB -e jobs/vda_v3_kitti_baseline.%J.stderr
+#BSUB -q batch_b200
+#BSUB -W 04:00
+#BSUB -n 4
+#BSUB -M 20480
+#BSUB -gpu "num=1:aff=yes"
+
+set -e
+
+module purge
+module load conda/4.8.5
+module load cuda/12.4.0
+
+PROJ=/home/izi2sgh/MYDATA/quanjie/liren/depth-v3/training-for-depth-anything-v3
+ENV=/home/izi2sgh/MYDATA/quanjie/liren/depth-v3/envs/depth-v3
+
+export PATH="${ENV}/bin:${PATH}"
+export PYTHONNOUSERSITE=1
+export TORCH_CUDA_ARCH_LIST="9.0"
+
+PROJECT_CODE="BH-000425-08-05"
+RUN_NAME="${PROJECT_CODE}-VDA-V3-KITTI-baseline"
+LOG_DIR="${PROJ}/logs/baseline"
+METRICS_JSON="${LOG_DIR}/baseline_metrics.json"
+XLSX="${PROJ}/experiments.xlsx"
+
+cd "${PROJ}"
+mkdir -p jobs "${LOG_DIR}"
+
+echo "=== env info ==="
+which python
+python -c "import torch; print('torch', torch.__version__, torch.cuda.is_available())"
+nvidia-smi | head -20
+echo "================"
+
+python evaluate.py \
+    --config configs/kitti.yaml \
+    --split test \
+    --metrics-json "${METRICS_JSON}"
+RC=$?
+
+STATUS="done"; [ "${RC}" -ne 0 ] && STATUS="failed"
+
+python scripts/record_run.py \
+    --xlsx "${XLSX}" \
+    --run-name "${RUN_NAME}" \
+    --project-code "${PROJECT_CODE}" \
+    --stage baseline --status "${STATUS}" \
+    --job-id "${LSB_JOBID}" \
+    --finished-at "$(date '+%Y-%m-%d %H:%M:%S')" \
+    --encoder vitl --freeze-backbone true --freeze-until "-" \
+    --lr "0" --backbone-lr-factor "0" --batch-size 1 \
+    --max-epochs 0 --precision 16-mixed \
+    --input-hw "350x1218" --dataset-split "eigen_test" \
+    --ckpt "pretrained:metric_video_depth_anything_vitl.pth" \
+    --log-dir "${LOG_DIR}" \
+    --metrics-json "${METRICS_JSON}" \
+    --notes "Raw pretrained VDA-V3 (no fine-tuning) — baseline for comparison." \
+    --update
+
+exit "${RC}"

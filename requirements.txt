@@ -9,3 +9,5 @@ rich>=13.0
 easydict>=1.10
 opencv-python>=4.5
 tqdm>=4.60
+openpyxl>=3.1
+filelock>=3.12

@@ -4,14 +4,13 @@
 
 # Path to the cloned Video-Depth-Anything repository. Its `video_depth_anything`
 # package will be imported by prepending this path to `sys.path`.
-vda_repo_path: /home/izi2sgh/MYDATA/quanjie/liren/v3/Video-Depth-Anything
+vda_repo_path: /home/izi2sgh/MYDATA/quanjie/liren/depth_baselines/Video-Depth-Anything
 
 model:
   # one of: vits / vitb / vitl
   encoder: vitl
   # pretrained checkpoint downloaded from the official repo
-  # e.g. checkpoints/video_depth_anything_vitl.pth  (relative) fine too
-  pretrained_ckpt: /home/izi2sgh/MYDATA/quanjie/liren/v3/Video-Depth-Anything/checkpoints/video_depth_anything_vitl.pth
+  pretrained_ckpt: /home/izi2sgh/MYDATA/quanjie/liren/depth_baselines/Video-Depth-Anything/checkpoints/metric_video_depth_anything_vitl.pth
   # Whether to build the model in metric mode (sigmoid*max_depth head).
   metric_depth: true
   max_depth: 80.0
@@ -26,16 +25,17 @@ data:
   #   {data_root}/raw/...            -> RGB images (KITTI raw)
   #   {data_root}/depth/train/...    -> KITTI depth GT (train)
   #   {data_root}/depth/val/...      -> KITTI depth GT (val)
-  data_root: /home/izi2sgh/MYDATA/quanjie/Datasets/KITTI
+  data_root: /home/izi2sgh/MYDATA/quanjie/liren/depth-v3/training-for-depth-anything-v3/kitti_root
   # Directory containing eigen_{train,val,test}_files.txt from BTS.
-  split_dir: /home/izi2sgh/MYDATA/quanjie/Datasets/KITTI/splits
+  split_dir: /home/izi2sgh/MYDATA/quanjie/liren/depth-v3/training-for-depth-anything-v3/splits
   train_split: eigen_train_files.txt
-  val_split: eigen_val_files.txt
+  # BTS ships only train + test splits; reuse test as validation.
+  val_split: eigen_test_files.txt
   test_split: eigen_test_files.txt
   # NOTE: DINOv2 requires H and W to be multiples of 14. The model.forward() will
   # auto-resize to the nearest multiple of 14 internally so any H/W works here.
-  input_height: 352
-  input_width: 1216
+  input_height: 350
+  input_width: 1218
   num_workers: 8
 
 training:
