@@ -1,0 +1,119 @@
+#!/bin/bash -l
+# -----------------------------------------------------------------------------
+# Official-protocol KITTI Eigen evaluation (Garg crop + short-side 518).
+# Evaluates both:
+#   (1) raw pretrained VDA-V3 metric model  (true baseline)
+#   (2) all existing fine-tuned best checkpoints found under logs/
+# Writes results to experiments.xlsx under stage="eval_official".
+# Public queue, no reservation.
+# -----------------------------------------------------------------------------
+#BSUB -J BH-000425-08-05-VDA-V3-KITTI-eval-official
+#BSUB -o jobs/vda_v3_kitti_eval_official.%J.stdout
+#BSUB -e jobs/vda_v3_kitti_eval_official.%J.stderr
+#BSUB -q batch_b200
+#BSUB -W 06:00
+#BSUB -n 4
+#BSUB -M 20480
+#BSUB -gpu "num=1:aff=yes"
+
+set -e
+
+module purge
+module load conda/4.8.5
+module load cuda/12.4.0
+
+PROJ=/home/izi2sgh/MYDATA/quanjie/liren/depth-v3/training-for-depth-anything-v3
+ENV=/home/izi2sgh/MYDATA/quanjie/liren/depth-v3/envs/depth-v3
+export PATH="${ENV}/bin:${PATH}"
+export PYTHONNOUSERSITE=1
+export TORCH_CUDA_ARCH_LIST="9.0"
+
+PROJECT_CODE="BH-000425-08-05"
+XLSX="${PROJ}/experiments.xlsx"
+OUT_DIR="${PROJ}/logs/official"
+
+cd "${PROJ}"
+mkdir -p jobs "${OUT_DIR}"
+
+echo "=== env ==="
+which python
+python -c "import torch; print('torch', torch.__version__, torch.cuda.is_available())"
+nvidia-smi | head -5
+echo "=========="
+
+# ---------------- (1) baseline (raw pretrained) ----------------
+RUN_BASE="${PROJECT_CODE}-VDA-V3-KITTI-official-baseline"
+JSON_BASE="${OUT_DIR}/baseline_official.json"
+
+python scripts/eval_official.py \
+    --config configs/kitti.yaml \
+    --input-size 518 \
+    --metrics-json "${JSON_BASE}" || exit 1
+
+python scripts/record_run.py \
+    --xlsx "${XLSX}" \
+    --run-name "${RUN_BASE}" \
+    --project-code "${PROJECT_CODE}" \
+    --stage eval --status done \
+    --job-id "${LSB_JOBID}" \
+    --finished-at "$(date '+%Y-%m-%d %H:%M:%S')" \
+    --encoder vitl --freeze-backbone "-" --freeze-until "-" \
+    --lr 0 --backbone-lr-factor 0 --batch-size 1 \
+    --max-epochs 0 --precision fp32 \
+    --input-hw "short518+garg" --dataset-split "eigen_test_official" \
+    --ckpt "pretrained:metric_video_depth_anything_vitl.pth" \
+    --log-dir "${OUT_DIR}" \
+    --metrics-json "${JSON_BASE}" \
+    --notes "OFFICIAL eval protocol: short-side 518, Garg crop, 80m cap." \
+    --update
+
+# ---------------- (2) evaluate each fine-tuned best ckpt -----------------
+for tag in lr5e-5 lr3e-5 lr1e-5 lr5e-6 lr1e-6; do
+    ckpt_dir="logs/depth_anything_v3/kitti_eigen_vitl_${tag}/checkpoints"
+    best_ckpt=$(ls ${ckpt_dir}/epoch*.ckpt 2>/dev/null | sort -t_ -k2 -n | head -1)
+    # pick lowest-val one (sorted by filename; safer: smallest abs_rel in filename)
+    best_ckpt=$(python - <<EOF
+import glob, re
+best=None; bv=1e9
+for p in glob.glob("${ckpt_dir}/epoch*.ckpt"):
+    m = re.search(r"val_abs_rel([0-9.]+)\.ckpt", p)
+    if not m: continue
+    v = float(m.group(1))
+    if v < bv: bv, best = v, p
+print(best or "")
+EOF
+)
+    if [ -z "${best_ckpt}" ]; then
+        echo "WARN: no ckpt found for ${tag}, skipping"
+        continue
+    fi
+    echo "---- evaluating ${tag}  ${best_ckpt} ----"
+
+    RUN="${PROJECT_CODE}-VDA-V3-KITTI-official-${tag}"
+    JSON="${OUT_DIR}/${tag}_official.json"
+
+    python scripts/eval_official.py \
+        --config configs/kitti.yaml \
+        --checkpoint "${best_ckpt}" \
+        --input-size 518 \
+        --metrics-json "${JSON}" || { echo "eval ${tag} failed"; continue; }
+
+    python scripts/record_run.py \
+        --xlsx "${XLSX}" \
+        --run-name "${RUN}" \
+        --project-code "${PROJECT_CODE}" \
+        --stage eval --status done \
+        --job-id "${LSB_JOBID}" \
+        --finished-at "$(date '+%Y-%m-%d %H:%M:%S')" \
+        --encoder vitl --freeze-backbone true --freeze-until 5 \
+        --lr "${tag#lr}" --backbone-lr-factor 0.1 --batch-size 4 \
+        --max-epochs 25 --precision 16-mixed \
+        --input-hw "short518+garg" --dataset-split "eigen_test_official" \
+        --ckpt "${best_ckpt}" \
+        --log-dir "${OUT_DIR}" \
+        --metrics-json "${JSON}" \
+        --notes "OFFICIAL eval of best ckpt from sweep ${tag}." \
+        --update
+done
+
+echo "=== all done ==="
